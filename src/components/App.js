@@ -26,55 +26,30 @@ import PoweredByAkash from '../assets/powered-by-akash.svg'
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {validatorImages: {}}
+    this.state = {}
     this.connect = this.connect.bind(this);
     this.showNetworkSelect = this.showNetworkSelect.bind(this);
-    this.getValidatorImage = this.getValidatorImage.bind(this);
-    this.loadValidatorImages = this.loadValidatorImages.bind(this);
     this.getBalance = this.getBalance.bind(this);
   }
 
   async componentDidMount() {
-    await this.setNetwork()
-    window.onload = async () => {
-      if (!window.keplr) {
-        this.setState({keplr: false})
-      } else {
-        this.setState({keplr: true})
-        this.connect()
-      }
-    }
+    this.connectKeplr()
+    window.addEventListener("load", this.connectKeplr)
     window.addEventListener("keplr_keystorechange", this.connect)
-    if(this.props.operators){
-      this.loadValidatorImages(this.props.network, _.compact(this.props.operators.map(el => el.validatorData)))
-    }
-    this.loadValidatorImages(this.props.network, this.props.validators)
   }
 
-  async componentDidUpdate(prevProps){
-    if(!this.state.keplr && window.keplr){
-      this.setState({keplr: true})
+  async componentDidUpdate(prevProps, prevState){
+    if(this.state.keplr != prevState.keplr){
       this.connect()
-    }
-    if(this.props.network !== prevProps.network){
+    }else if(this.props.network && this.props.network !== prevProps.network){
       this.setState({ balance: undefined })
       this.connect()
-      await this.setNetwork()
     }
   }
 
   componentWillUnmount() {
+    window.removeEventListener("load", this.connectKeplr)
     window.removeEventListener("keplr_keystorechange", this.connect)
-  }
-
-  setNetwork(){
-    const network = this.props.network
-    if(!network) return
-
-    return this.setState({
-      error: false,
-      queryClient: network.queryClient
-    })
   }
 
   showNetworkSelect(){
@@ -85,20 +60,30 @@ class App extends React.Component {
     return this.props.network.connected && Object.values(this.props.validators).length > 0
   }
 
+  connectKeplr() {
+    if (this.state.keplr && !window.keplr) {
+      this.setState({ keplr: false })
+    } else if(!this.state.keplr && window.keplr){
+      this.setState({ keplr: true })
+    }
+  }
+
   async connect() {
-    if(!this.connected()){
+    if (!this.connected()) {
       return this.setState({
         error: 'Could not connect to any available API servers'
       })
     }
     const chainId = this.props.network.chainId
     try {
-      await window.keplr.enable(chainId);
+      if (window.keplr) {
+        await window.keplr.enable(chainId);
+      }
     } catch (e) {
       console.log(e.message, e)
       await this.suggestChain(this.props.network)
     }
-    if (window.getOfflineSigner){
+    if (window.getOfflineSigner) {
       try {
         const offlineSigner = await window.getOfflineSignerAuto(chainId)
         const key = await window.keplr.getKey(chainId);
@@ -111,10 +96,12 @@ class App extends React.Component {
         this.setState({
           address: address,
           stargateClient: stargateClient,
+          queryClient: this.props.network.queryClient,
           error: false
         })
         this.getBalance()
       } catch (e) {
+        console.log(e)
         return this.setState({
           error: 'Failed to connect to signing client. API may be down'
         })
@@ -122,14 +109,15 @@ class App extends React.Component {
     }
   }
 
-  async disconnect(){
+  async disconnect() {
     this.setState({
       address: null,
       stargateClient: null
     })
   }
 
-  suggestChain(network){
+  suggestChain(network) {
+    if (!window.keplr) return
     const currency = {
       coinDenom: network.symbol,
       coinMinimalDenom: network.denom,
@@ -153,67 +141,8 @@ class App extends React.Component {
         bech32PrefixConsPub: network.prefix + "valconspub"
       },
       currencies: [currency],
-      feeCurrencies:[currency]
+      feeCurrencies: [currency]
     })
-  }
-
-  getValidatorImage(network, validatorAddress, expireCache){
-    const images = this.state.validatorImages[network.name] || {}
-    if(images[validatorAddress]){
-      return images[validatorAddress]
-    }
-    return this.getValidatorImageCache(validatorAddress, expireCache)
-  }
-
-  getValidatorImageCache(validatorAddress, expireCache){
-    const cache = localStorage.getItem(validatorAddress)
-    if(!cache) return
-
-    let cacheData = {}
-    try {
-      cacheData = JSON.parse(cache)
-    } catch {
-      cacheData.url = cache
-    }
-    if(!cacheData.url) return
-    if(!expireCache) return cacheData.url
-
-    const cacheTime = cacheData.time && new Date(cacheData.time)
-    if(!cacheData.time) return
-
-    const expiry = new Date() - 1000 * 60 * 60 * 24 * 3
-    if(cacheTime >= expiry) return cacheData.url
-  }
-
-  async loadValidatorImages(network, validators) {
-    this.setState((state, props) => ({
-      validatorImages: _.set(state.validatorImages, network.name, state.validatorImages[network.name] || {})
-    }));
-    const calls = Object.values(validators).map(validator => {
-      return () => {
-        if(validator.description.identity && !this.getValidatorImage(network, validator.operator_address, true)){
-          return fetch("https://keybase.io/_/api/1.0/user/lookup.json?fields=pictures&key_suffix=" + validator.description.identity)
-            .then((response) => {
-              return response.json();
-            }).then((data) => {
-              if(data.them && data.them[0] && data.them[0].pictures){
-                const imageUrl = data.them[0].pictures.primary.url
-                this.setState((state, props) => ({
-                  validatorImages: _.set(state.validatorImages, [network.name, validator.operator_address], imageUrl)
-                }));
-                localStorage.setItem(validator.operator_address, JSON.stringify({url: imageUrl, time: +new Date()}))
-              }
-            }, error => { })
-        }else{
-          return null
-        }
-      }
-    })
-    const batchCalls = _.chunk(calls, 1);
-
-    for (const batchCall of batchCalls) {
-      await Promise.all(batchCall.map(call => call()))
-    }
   }
 
   async getBalance() {
@@ -227,10 +156,10 @@ class App extends React.Component {
       )
   }
 
-  setCopied(){
-    this.setState({copied: true})
+  setCopied() {
+    this.setState({ copied: true })
     setTimeout(() => {
-      this.setState({copied: false})
+      this.setState({ copied: false })
     }, 2000)
   }
 
@@ -239,40 +168,46 @@ class App extends React.Component {
       <Container>
         <header className="d-flex flex-wrap justify-content-between py-3 mb-4 border-bottom">
           <div className="logo d-flex align-items-center mb-3 mb-md-0 text-dark text-decoration-none">
-            <span onClick={() => this.setState({showAbout: true})} role="button" className="text-dark text-decoration-none">
+            <span onClick={() => this.setState({ showAbout: true })} role="button" className="text-dark text-decoration-none">
               <img src={Logo} srcSet={`${Logo2x} 2x, ${Logo3x} 3x`} alt="REStake" />
             </span>
           </div>
           {this.state.address &&
-          <ul className="nav nav-pills justify-content-end">
-            <li className="nav-item d-none d-xl-block">
-              <CopyToClipboard text={this.state.address}
-                onCopy={() => this.setCopied()}>
-                <span role="button"><span className={'nav-link disabled clipboard' + (this.state.copied ? ' copied' : '')}>{this.state.address}</span></span>
-              </CopyToClipboard>
-            </li>
-            <li className="nav-item d-none d-md-block">
-              <span className="nav-link">
-                <Badge>
-                  <Coins
-                    coins={this.state.balance}
-                    decimals={this.props.network.decimals}
-                  />
-                </Badge>
-              </span>
-            </li>
-            {false && (
-              <li className="nav-item">
-                <Button onClick={() => this.disconnect()} className="nav-link btn-link" aria-current="page">Disconnect</Button>
+            <ul className="nav nav-pills justify-content-end">
+              <li className="nav-item d-none d-xl-block">
+                <CopyToClipboard text={this.state.address}
+                  onCopy={() => this.setCopied()}>
+                  <span role="button"><span className={'nav-link disabled clipboard' + (this.state.copied ? ' copied' : '')}>{this.state.address}</span></span>
+                </CopyToClipboard>
               </li>
-            )}
-          </ul>
+              <li className="nav-item d-none d-lg-block d-xl-none">
+                <CopyToClipboard text={this.state.address}
+                  onCopy={() => this.setCopied()}>
+                  <span role="button"><span style={{maxWidth: 300}} className={'nav-link disabled small d-block text-truncate clipboard' + (this.state.copied ? ' copied' : '')}>{this.state.address}</span></span>
+                </CopyToClipboard>
+              </li>
+              <li className="nav-item d-none d-md-block">
+                <span className="nav-link">
+                  <Badge>
+                    <Coins
+                      coins={this.state.balance}
+                      decimals={this.props.network.decimals}
+                    />
+                  </Badge>
+                </span>
+              </li>
+              {false && (
+                <li className="nav-item">
+                  <Button onClick={() => this.disconnect()} className="nav-link btn-link" aria-current="page">Disconnect</Button>
+                </li>
+              )}
+            </ul>
           }
           <div className="d-flex align-items-center mb-3 mb-md-0 text-dark text-decoration-none">
-            <NetworkSelect show={this.state.showNetworkSelect} onHide={() => {this.setState({showNetworkSelect: false})}} networks={this.props.networks}
+            <NetworkSelect show={this.state.showNetworkSelect} onHide={() => { this.setState({ showNetworkSelect: false }) }} networks={this.props.networks}
               network={this.props.network}
-              validators={this.props.validators} getValidatorImage={this.getValidatorImage}
-              changeNetwork={this.props.changeNetwork} loadValidatorImages={this.loadValidatorImages} />
+              validators={this.props.validators}
+              changeNetwork={this.props.changeNetwork} />
           </div>
         </header>
         <div className="mb-5">
@@ -303,7 +238,6 @@ class App extends React.Component {
                 validators={this.props.validators}
                 balance={this.state.balance}
                 getBalance={this.getBalance}
-                getValidatorImage={this.getValidatorImage}
                 queryClient={this.state.queryClient}
                 stargateClient={this.state.stargateClient} />
             </>
@@ -325,9 +259,16 @@ class App extends React.Component {
             <img src={PoweredByAkash} alt="Powered by Akash" width={200} />
           </a>
 
-          <a href="https://ecostake.com" target="_blank" rel="noreferrer" className="col-md-4 d-flex align-items-center justify-content-center me-lg-auto link-dark text-decoration-none">
-            <span className="d-none d-sm-inline me-1">Built with 💚&nbsp;</span> by ECO Stake 🌱
-          </a>
+          <div className="col-md-4 align-items-center text-center me-lg-auto">
+            <a href="https://ecostake.com" target="_blank" rel="noreferrer" className="link-dark text-decoration-none d-block mb-1">
+              <span className="d-none d-sm-inline">Built with 💚</span> by ECO Stake 🌱
+            </a>
+            {this.props.network?.usingDirectory && (
+              <a href="https://cosmos.directory" target="_blank" className="link-dark text-decoration-none d-block small">
+                <span className="d-none d-sm-inline">Powered by</span> ⚛ cosmos.directory
+              </a>
+            )}
+          </div>
 
           <p className="col-md-4 mb-0 text-muted text-end justify-content-end d-none d-lg-flex">
             <GitHubButton href="https://github.com/eco-stake/restake" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star eco-stake/restake on GitHub">Star</GitHubButton>

@@ -1,10 +1,10 @@
 import _ from 'lodash'
-import axios from 'axios'
 import React, { useEffect, useReducer } from 'react';
 import { useParams, useNavigate } from "react-router-dom";
 import Network from '../utils/Network.mjs'
-import { overrideNetworks } from '../utils/Helpers.mjs'
+import CosmosDirectory from '../utils/CosmosDirectory.mjs'
 import App from './App';
+import AlertMessage from './AlertMessage'
 
 import {
   Spinner
@@ -16,15 +16,21 @@ function NetworkFinder() {
   const params = useParams();
   const navigate = useNavigate()
 
+  const directory = CosmosDirectory()
+
   const [state, setState] = useReducer(
     (state, newState) => ({...state, ...newState}),
-    {loading: true, networks: [], operators: [], validators: {}}
+    {loading: true, networks: {}, operators: [], validators: {}}
   )
 
   const getNetworks = async () => {
-    const registryNetworks = await axios.get('https://registry.cosmos.directory')
-      .then(res => res.data)
-      .then(data => data.reduce((a, v) => ({ ...a, [v.directory]: v}), {}))
+    let registryNetworks
+    try {
+      registryNetworks = await directory.getChains()
+    } catch (error) {
+      setState({error: error.message, loading: false})
+      return {}
+    }
 
     const networks = networksData.filter(el => el.enabled !== false).map(data => {
       const registryData = registryNetworks[data.name] || {}
@@ -33,18 +39,18 @@ function NetworkFinder() {
     return _.compact(networks).reduce((a, v) => ({ ...a, [v.name]: v}), {})
   }
 
-  const changeNetwork = (network, validators) => {
-    const operators = Object.keys(validators).length ? network.getOperators(validators) : []
+  const changeNetwork = (network) => {
     setState({
       network: network,
-      validators: validators,
-      operators: operators
+      validators: network.getValidators(),
+      operators: network.getOperators()
     })
 
     navigate("/" + network.name);
   }
 
   useEffect(() => {
+    if(state.error) return
     if(!Object.keys(state.networks).length){
       setState({loading: true})
       getNetworks().then(networks => {
@@ -82,17 +88,17 @@ function NetworkFinder() {
     if(state.error) return
     if(!state.network || !state.network.connected) return
     if(state.network && (!Object.keys(state.validators).length)){
-      state.network.getValidators().then(validators => {
-        setState({
-          validators,
-          operators: state.network.getOperators(validators),
-          loading: false
-        })
-      }, error => {
-        setState({validators: {}, loading: false})
+      setState({
+        validators: state.network.getValidators(),
+        operators: state.network.getOperators(),
+        loading: false
       })
     }
   }, [state.network])
+
+  if (state.error) {
+    return <AlertMessage message={state.error} variant="danger" dismissible={false} />
+  }
 
   if (state.loading) {
     return (
@@ -104,8 +110,10 @@ function NetworkFinder() {
     )
   }
 
-  return <App networks={state.networks} network={state.network} operators={state.operators} validators={state.validators}
-    changeNetwork={(network, validators) => changeNetwork(network, validators)} />;
+  return <App networks={state.networks} network={state.network}
+  operators={state.operators} validators={state.validators}
+  changeNetwork={(network, validators) => changeNetwork(network, validators)}
+  />;
 }
 
 export default NetworkFinder

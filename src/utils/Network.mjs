@@ -4,49 +4,70 @@ import SigningClient from './SigningClient.mjs'
 import ApyClient from '../ApyClient.mjs'
 import Operator from './Operator.mjs'
 import Chain from './Chain.mjs'
+import CosmosDirectory from './CosmosDirectory.mjs'
+import DesmosSigningClient from './DesmosSigningClient.mjs'
 
 const Network = async (data, withoutQueryClient) => {
+  const SIGNERS = {
+    desmos: DesmosSigningClient
+  }
 
   const chain = await Chain(data)
+  const directory = CosmosDirectory()
+  const validators = await directory.getValidators(data.name)
+  const operators = data.operators || validators.filter(el => el.restake).map(el => {
+    return Operator(el)
+  })
+
+  const rpcUrl = data.rpcUrl || directory.rpcUrl(data.name)
+  const restUrl = data.restUrl || directory.restUrl(data.name)
+
+  const usingDirectory = !![restUrl, rpcUrl].find(el => el.match("cosmos.directory"))
+
   let queryClient
   if(!withoutQueryClient){
-    queryClient = await QueryClient(chain.chainId, data.rpcUrl, data.restUrl)
+    queryClient = await QueryClient(chain.chainId, rpcUrl, restUrl)
   }
 
   const signingClient = (wallet, key) => {
     if(!queryClient) return 
 
     const gasPrice = data.gasPrice || '0.0025' + chain.denom
-    return SigningClient(queryClient.rpcUrl, chain.chainId, gasPrice, wallet, key)
+    const client = SIGNERS[data.name] || SigningClient
+    return client(queryClient.rpcUrl, gasPrice, wallet, key)
   }
 
   const apyClient = queryClient && ApyClient(chain, queryClient.rpcUrl, queryClient.restUrl)
 
-  const getOperator = (operators, operatorAddress) => {
+  const getOperator = (operatorAddress) => {
     return operators.find(elem => elem.address === operatorAddress)
   }
 
-  const getOperatorByBotAddress = (operators, botAddress) => {
+  const getOperatorByBotAddress = (botAddress) => {
     return operators.find(elem => elem.botAddress === botAddress)
   }
 
-  const getOperators = (validators) => {
-    return sortOperators().map(operator => {
-      const validator = validators[operator.address]
-      return Operator(operator, validator)
-    })
+  const getOperators = () => {
+    return sortOperators()
   }
 
   const sortOperators = () => {
-    const random = _.shuffle(data.operators)
+    const random = _.shuffle(operators)
     if(data.ownerAddress){
       return _.sortBy(random, ({address}) => address === data.ownerAddress ? 0 : 1)
     }
     return random
   }
 
-  const getValidators = () => {
-    return queryClient.getAllValidators(150)
+  const getValidators = (opts) => {
+    opts = opts || {}
+    return validators.filter(validator => {
+      if(opts.status) return validator.status === opts.status
+      return true
+    }).reduce(
+      (a, v) => ({ ...a, [v.operator_address]: v }),
+      {}
+    )
   }
 
   return {
@@ -67,11 +88,13 @@ const Network = async (data, withoutQueryClient) => {
     testAddress: data.testAddress,
     restUrl: queryClient && queryClient.restUrl,
     rpcUrl: queryClient && queryClient.rpcUrl,
-    operators: data.operators,
     authzSupport: chain.authzSupport,
+    validators,
+    operators,
     data,
     chain,
     queryClient,
+    usingDirectory,
     getApy: apyClient && apyClient.getApy,
     signingClient,
     getValidators,

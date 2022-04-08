@@ -11,9 +11,9 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
     "rest"
   );
 
-  const getAllValidators = (pageSize, pageCallback) => {
+  const getAllValidators = (pageSize, opts, pageCallback) => {
     return getAllPages((nextKey) => {
-      return getValidators(pageSize, nextKey);
+      return getValidators(pageSize, opts, nextKey);
     }, pageCallback).then((pages) => {
       const validators = _.shuffle(pages.map((el) => el.validators).flat());
       return validators.reduce(
@@ -23,9 +23,10 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
     });
   };
 
-  const getValidators = (pageSize, nextKey) => {
+  const getValidators = (pageSize, opts, nextKey) => {
+    opts = opts || {}
     const searchParams = new URLSearchParams();
-    searchParams.append("status", "BOND_STATUS_BONDED");
+    if (opts.status) searchParams.append("status", opts.status);
     if (pageSize) searchParams.append("pagination.limit", pageSize);
     if (nextKey) searchParams.append("pagination.key", nextKey);
     return axios
@@ -34,7 +35,7 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
           "/cosmos/staking/v1beta1/validators?" +
           searchParams.toString(),
         {
-          timeout: 5000,
+          timeout: opts.timeout || 10000,
         }
       )
       .then((res) => res.data);
@@ -73,7 +74,7 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
       .get(restUrl + "/cosmos/bank/v1beta1/balances/" + address)
       .then((res) => res.data)
       .then((result) => {
-        const balance = result.balances.find(
+        const balance = result.balances?.find(
           (element) => element.denom === denom
         ) || { denom: denom, amount: 0 };
         return balance;
@@ -85,7 +86,7 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
       .get(restUrl + "/cosmos/staking/v1beta1/delegations/" + address)
       .then((res) => res.data)
       .then((result) => {
-        const delegations = _.shuffle(result.delegation_responses).reduce(
+        const delegations = result.delegation_responses.reduce(
           (a, v) => ({ ...a, [v.delegation.validator_address]: v }),
           {}
         );
@@ -113,8 +114,8 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
 
   const getGrants = (botAddress, address, opts) => {
     const searchParams = new URLSearchParams();
-    searchParams.append("grantee", botAddress);
-    searchParams.append("granter", address);
+    if(botAddress) searchParams.append("grantee", botAddress);
+    if(address) searchParams.append("granter", address);
     // searchParams.append("msg_type_url", "/cosmos.staking.v1beta1.MsgDelegate");
     return axios
       .get(restUrl + "/cosmos/authz/v1beta1/grants?" + searchParams.toString(), opts)
@@ -135,13 +136,19 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
         const stakeGrant = result.grants.find((el) => {
           if (
             el.authorization["@type"] ===
-            "/cosmos.staking.v1beta1.StakeAuthorization"
+            "/cosmos.staking.v1beta1.StakeAuthorization" || (
+              // Handle GenericAuthorization for Ledger
+              el.authorization["@type"] ===
+              "/cosmos.authz.v1beta1.GenericAuthorization" &&
+              el.authorization.msg ===
+              "/cosmos.staking.v1beta1.MsgDelegate"
+            )
           ) {
             return Date.parse(el.expiration) > new Date();
           } else {
             return false;
           }
-        });
+        })
         return {
           claimGrant,
           stakeGrant,

@@ -80,7 +80,7 @@ cp .env.sample .env
 
 **Populate your new .env file with your mnemonic.**
 
-### Running the script (to see if everything works correctly)
+### Running the script manually
 
 Running the autostake script manually is then simple.
 
@@ -104,6 +104,7 @@ Update your local repository and pre-build your Docker containers with the follo
 
 ```bash
 git pull
+docker-compose run --rm app npm install
 docker-compose build --no-cache
 ```
 
@@ -202,9 +203,7 @@ TriggeredBy: <font color="#8AE234"><b>●</b></font> restake.timer
 
 You will likely want to customise your networks config, e.g. to set your own node URLs to ensure your autocompounding script completes successfully.
 
-Note that REStake requires a node with indexing enabled and minimum gas prices matching the networks.json gas price (or your local override).
-
-Create a `src/networks.local.json` file with JSON in the following format:
+Create a `src/networks.local.json` file and specify the networks you want to override. The below is just an example, **you should only override a config if you need to**.
 
 ```json
 {
@@ -218,7 +217,9 @@ Create a `src/networks.local.json` file with JSON in the following format:
     ],
     "gasPrice": "0.001uosmo",
     "autostake": {
-      "batchTxs": 69
+      "batchTxs": 69,
+      "batchQueries": 50,
+      "delegatorTimeout": 5000
     }
   },
   "desmos": {
@@ -237,34 +238,42 @@ Any values you specify will override the `networks.json` file. These are example
 
 Arrays will be replaced and not merged. The file is `.gitignore`'d so it won't affect upstream updates.
 
+Note that REStake requires a node with indexing enabled and minimum gas prices matching the `networks.json` gas price (or your local override).
+
 ## Submiting your operator
 
 ### Setup your REStake operator
 
-You now need to update the [networks.json](./src/networks.json) file at `./src/networks.json` to add your operator to any networks you want to auto-compound for. Check the existing file for examples, but the operators array is simple:
+You now need to update the [Validator Registry](https://github.com/eco-stake/validator-registry) to add your operator information to any networks you want to auto-compound for. Check the README and existing validators for examples, but the config for a network looks like this:
 
 ```json
-"operators": [{
-  "address": "osmovaloper1u5v0m74mql5nzfx2yh43s2tke4mvzghr6m2n5t",
-  "botAddress": "osmo1yxsmtnxdt6gxnaqrg0j0nudg7et2gqczed559y",
-  "runTime": ["09:00", "21:00"],
-  "minimumReward": 1000
+{
+  "name": "akash",
+  "address": "akashvaloper1xgnd8aach3vawsl38snpydkng2nv8a4kqgs8hf",
+  "restake": {
+    "address": "akash1yxsmtnxdt6gxnaqrg0j0nudg7et2gqczud2r2v",
+    "run_time": [
+      "09:00",
+      "21:00"
+    ],
+    "minimum_reward": 1000
+  }
 },
 ```
 
-`address` is your validator's address, and `botAddress` is the address from your new hot wallet you generated earlier.
+`address` is your validator's address, and `restake.address` is the address from your new hot wallet you generated earlier.
 
-`runTime` is the time *in UTC* that you intend to run your bot, and there are a few options. Pass a single time, e.g. `09:00` to specify a single run at 9am UTC. Use an array for multiple specified times, e.g. `["09:00", "21:00"]`. Use an interval string for multiple times per hour/day, e.g. `"every 15 minutes"`.
+`restake.run_time` is the time *in UTC* that you intend to run your bot, and there are a few options. Pass a single time, e.g. `09:00` to specify a single run at 9am UTC. Use an array for multiple specified times, e.g. `["09:00", "21:00"]`. Use an interval string for multiple times per hour/day, e.g. `"every 15 minutes"`.
 
-`minimumReward` is the minimum reward to trigger autostaking, otherwise the address be skipped. This could be set higher for more frequent restaking. Note this is in the base denomination, e.g. `uosmo`.
+`restake.minimum_reward` is the minimum reward to trigger autostaking, otherwise the address be skipped. This could be set higher for more frequent restaking. Note this is in the base denomination, e.g. `uosmo`.
 
 Repeat this config for all networks you want to REStake for.
 
-Note that the `botAddress` is the address which will be granted by the delegator in the UI to carry out their restaking transactions.
+Note that the `restake.address` is the address which will be granted by the delegator in the UI to carry out their restaking transactions.
 
 #### Submit your operator
 
-You can now submit your `networks.json` update to the repository in a pull request which will be merged and deployed as soon as possible.
+You can now submit your [Validator Registry](https://github.com/eco-stake/validator-registry) update to that repository in a pull request which will be merged as soon as possible. REStake automatically updates within 15 minutes of changes being merged.
 
 ## Adding/updating a network
 
@@ -275,17 +284,7 @@ To add a network to REStake, add the required information to `networks.json` as 
 ```json
 {
   "name": "osmosis",
-  "restUrl": [
-    "https://rest.cosmos.directory/osmosis",
-  ],
-  "rpcUrl": [
-    "https://rpc.cosmos.directory/osmosis",
-  ],
   "gasPrice": "0.025uosmo",
-  "testAddress": "osmo1yxsmtnxdt6gxnaqrg0j0nudg7et2gqczed559y",
-  "ownerAddress": "osmovaloper1u5v0m74mql5nzfx2yh43s2tke4mvzghr6m2n5t",
-  "operators": [
-  ],
   "authzSupport": true
 }
 ```
@@ -306,9 +305,9 @@ Alternative run from source using `docker-compose up` or `npm start`.
 
 The REStake UI is both validator and network agnostic. Any validator can be added as an operator and run this tool to provide an auto-compounding service to their delegators, but they can also run their own UI if they choose and adjust the branding to suit themselves.
 
-For this to work, we need a common source of chain information, and a common source of 'operator' information. Chain information is sourced from the [Chain Registry](https://github.com/cosmos/chain-registry), via an API provided by [cosmos.directory](https://registry.cosmos.directory). Operator information currently lives in the [networks.json](./src/networks.json) file in this repository.
+For this to work, we need a common source of chain information, and a common source of 'operator' information. Chain information is sourced from the [Chain Registry](https://github.com/cosmos/chain-registry), via an API provided by [cosmos.directory](https://github.com/eco-stake/cosmos-directory). Operator information lives in the [Validator Registry](https://github.com/eco-stake/validator-registry).
 
-If you fork this repository to provide your own UI, please keep up to date with the upstream to ensure you have the latest [networks.json](./src/networks.json) to include all operators. Some honesty is needed until we have a more decentralised solution.
+Now we have a common source of operator information, applications can integrate with REStake validators easier using the data directly from GitHub, or via the [cosmos.directory](https://github.com/eco-stake/cosmos-directory) project.
 
 ## Disclaimer
 

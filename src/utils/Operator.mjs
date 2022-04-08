@@ -1,10 +1,13 @@
 import moment from 'moment'
 import parse from 'parse-duration'
 
-const Operator = (data, validatorData) => {
+const Operator = (data) => {
+  const { address } = data
+  const botAddress = data.restake.address
+  const runTime = data.restake.run_time
+  const minimumReward = data.restake.minimum_reward
 
   function runsPerDay() {
-    const { runTime } = data
     if(Array.isArray(runTime)){
       return runTime.length
     }else{
@@ -17,8 +20,8 @@ const Operator = (data, validatorData) => {
   }
 
   function runTimes() {
-    if(Array.isArray(data.runTime)) return data.runTime
-    return [data.runTime]
+    if(Array.isArray(runTime)) return runTime
+    return [runTime]
   }
 
   function runTimesString(){
@@ -30,52 +33,51 @@ const Operator = (data, validatorData) => {
   }
 
   function frequency() {
-    if(Array.isArray(data.runTime)){
-      return data.runTime.length + 'x per day'
+    if(Array.isArray(runTime)){
+      return runTime.length + 'x per day'
     }else{
-      if(data.runTime.startsWith('every')){
-        return data.runTime.replace('every ', '')
+      if(runTime.startsWith('every')){
+        return runTime.replace('every ', '')
       }
       return 'daily'
     }
   }
 
   function nextRun() {
-    if (!data.runTime) return
+    if (!runTime) return
 
-    if(Array.isArray(data.runTime)){
-      const runTimes = data.runTime.map(el => nextRunFromRuntime(el))
-      return runTimes.sort().find(el => el.isAfter());
-    }else{
-      if(data.runTime.startsWith('every')){
-        return nextRunFromInterval(data.runTime)
+    if (Array.isArray(runTime)) {
+      return runTime
+        .map(el => nextRunFromRuntime(el))
+        .sort((a, b) => a.valueOf() - b.valueOf())
+        .find(el => el.isAfter());
+    } else {
+      if(runTime.startsWith('every')){
+        return nextRunFromInterval(runTime)
       }
-      return nextRunFromRuntime(data.runTime)
+      return nextRunFromRuntime(runTime)
     }
   }
 
   function nextRunFromInterval(runTime){
     const interval = parse(runTime.replace('every ', ''))
-    const date = moment().startOf('day')
-    do {
-      date.add(interval, 'ms')
-    } while (date.isBefore())
-    return date
+    const diff = moment().startOf('day').diff()
+    const ms = interval + diff % interval
+    return moment().add(ms, 'ms')
   }
 
   function nextRunFromRuntime(runTime) {
-    const date = moment(runTime, 'HH:mm:ss')
-    if(date.isAfter()) return date
-
-    return date.add(1, 'day')
+    const date = moment.utc(runTime, 'HH:mm:ss')
+    return date.isAfter() ? date : date.add(1, 'day')
   }
 
   return {
-    address: data.address,
-    botAddress: data.botAddress,
-    moniker: validatorData && validatorData.description.moniker,
-    description: validatorData && validatorData.description,
-    validatorData,
+    address,
+    botAddress,
+    runTime,
+    minimumReward,
+    moniker: data.description?.moniker,
+    description: data.description,
     data,
     nextRun,
     frequency,

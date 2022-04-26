@@ -1,15 +1,14 @@
 import React from 'react'
 import Coins from './Coins'
-
-import {
-  coin
-} from '@cosmjs/stargate'
+import { coin } from '../utils/Helpers.mjs'
 
 import {
   Button,
   Form,
   Alert
 } from 'react-bootstrap'
+
+import { pow, multiply, divide, subtract, bignumber } from 'mathjs'
 
 class DelegateForm extends React.Component {
   constructor(props) {
@@ -40,7 +39,10 @@ class DelegateForm extends React.Component {
     const memo = this.state.memo
     const client = this.props.stargateClient
 
-    let messages = this.buildMessages(amount)
+    const decimals = pow(10, this.props.network.decimals)
+    const denomAmount = bignumber(multiply(amount, decimals))
+
+    let messages = this.buildMessages(denomAmount)
     let gas
     try {
        gas = await client.simulate(this.props.address, messages)
@@ -63,7 +65,6 @@ class DelegateForm extends React.Component {
     const address = this.props.address
     const validatorAddress = this.props.selectedValidator.operator_address
     let messages = []
-    const decimals = Math.pow(10, this.props.network.decimals || 6)
     if(this.props.redelegate){
       messages.push({
         typeUrl: "/cosmos.staking.v1beta1.MsgBeginRedelegate",
@@ -71,7 +72,7 @@ class DelegateForm extends React.Component {
           delegatorAddress: address,
           validatorSrcAddress: this.props.validator.operator_address,
           validatorDstAddress: validatorAddress,
-          amount: coin(parseInt(parseFloat(amount) * decimals), this.props.network.denom),
+          amount: coin(amount, this.props.network.denom)
         }
       })
     }else{
@@ -81,7 +82,7 @@ class DelegateForm extends React.Component {
         value: {
           delegatorAddress: address,
           validatorAddress: validatorAddress,
-          amount: coin(parseInt(parseFloat(amount) * decimals), this.props.network.denom),
+          amount: coin(amount, this.props.network.denom)
         }
       })
     }
@@ -90,12 +91,12 @@ class DelegateForm extends React.Component {
 
   async setAvailableAmount(){
     this.setState({error: undefined})
-    const decimals = Math.pow(10, this.props.network.decimals || 6)
-    const messages = this.buildMessages(parseInt(this.props.availableBalance.amount * 0.95) / decimals)
+    const messages = this.buildMessages(multiply(this.props.availableBalance.amount, 0.95))
     this.props.stargateClient.simulate(this.props.address, messages).then(gas => {
       const saveTxFeeNum = (this.props.redelegate || this.props.undelegate) ? 0 : 10
       const gasPrice = this.props.stargateClient.getFee(gas).amount[0].amount
-      const amount = (this.props.availableBalance.amount - (gasPrice * saveTxFeeNum)) / decimals
+      const decimals = pow(10, this.props.network.decimals || 6)
+      const amount = divide(subtract(this.props.availableBalance.amount, multiply(gasPrice, saveTxFeeNum)), decimals)
 
       this.setState({amount: amount > 0 ? amount : 0})
     }, error => {
@@ -126,7 +127,7 @@ class DelegateForm extends React.Component {
             <Form.Label>Amount</Form.Label>
             <div className="mb-3">
               <div className="input-group">
-                <Form.Control name="amount" type="number" step={0.000001} placeholder="10" required={true} value={this.state.amount} onChange={this.handleInputChange} />
+                <Form.Control name="amount" type="number" min={0} step={0.000001} placeholder="10" required={true} value={this.state.amount} onChange={this.handleInputChange} />
                 <span className="input-group-text">{this.denom()}</span>
               </div>
               {this.props.availableBalance &&

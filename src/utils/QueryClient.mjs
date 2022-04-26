@@ -2,14 +2,8 @@ import axios from "axios";
 import _ from "lodash";
 
 const QueryClient = async (chainId, rpcUrls, restUrls) => {
-  const rpcUrl = await findAvailableUrl(
-    Array.isArray(rpcUrls) ? rpcUrls : [rpcUrls],
-    "rpc"
-  );
-  const restUrl = await findAvailableUrl(
-    Array.isArray(restUrls) ? restUrls : [restUrls],
-    "rest"
-  );
+  let rpcUrl = await findAvailableUrl(rpcUrls, "rpc")
+  let restUrl = await findAvailableUrl(restUrls, "rest")
 
   const getAllValidators = (pageSize, opts, pageCallback) => {
     return getAllPages((nextKey) => {
@@ -182,22 +176,25 @@ const QueryClient = async (chainId, rpcUrls, restUrls) => {
     return pages;
   };
 
-  function findAvailableUrl(urls, type) {
+  async function findAvailableUrl(urls, type) {
+    if (!Array.isArray(urls)) {
+      if(urls.match('cosmos.directory')){
+        return urls // cosmos.directory health checks already
+      }else{
+        urls = [urls]
+      }
+    }
     const path = type === "rest" ? "/blocks/latest" : "/block";
-    return Promise.any(
-      urls.map((url) => {
-        return axios
-          .get(url + path, { timeout: 10000 })
+    return Promise.any(urls.map(async (url) => {
+      try {
+        let data = await axios.get(url + path, { timeout: 10000 })
           .then((res) => res.data)
-          .then((data) => {
-            if (type === "rpc") data = data.result;
-            if (!data.block.header.chain_id === chainId) {
-              throw false;
-            }
-            return url;
-          });
-      })
-    );
+        if (type === "rpc") data = data.result;
+        if (data.block?.header?.chain_id === chainId) {
+          return url;
+        }
+      } catch { }
+    }));
   }
 
   return {

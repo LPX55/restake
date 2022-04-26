@@ -1,15 +1,12 @@
-import Coins from './Coins'
-
-import {
-  coin
-} from '@cosmjs/stargate'
 import { MsgWithdrawDelegatorReward, MsgWithdrawValidatorCommission } from "cosmjs-types/cosmos/distribution/v1beta1/tx";
 import { MsgDelegate } from "cosmjs-types/cosmos/staking/v1beta1/tx";
+import { coin } from "../utils/Helpers.mjs";
 
 import {
-  Dropdown,
-  Badge
+  Dropdown
 } from 'react-bootstrap'
+
+import { add, subtract, multiply, divide, bignumber, floor } from 'mathjs'
 
 function ClaimRewards(props) {
   async function claim(){
@@ -30,16 +27,16 @@ function ClaimRewards(props) {
     const fee = props.stargateClient.getFee(gas)
     const feeAmount = fee.amount[0].amount
 
-    const totalReward = props.validatorRewards.reduce((sum, validatorReward) => sum + validatorReward.reward, 0);
+    const totalReward = props.validatorRewards.reduce((sum, validatorReward) => add(sum, bignumber(validatorReward.reward)), 0);
     const adjustedValidatorRewards = props.validatorRewards.map(validatorReward => {
-      const shareOfFee = (validatorReward.reward / totalReward) * feeAmount; // To take a proportional amount from each validator relative to total reward
+      const shareOfFee = multiply(divide(validatorReward.reward, totalReward), feeAmount); // To take a proportional amount from each validator relative to total reward
       return {
         validatorAddress: validatorReward.validatorAddress,
-        reward: validatorReward.reward - shareOfFee,
+        reward: subtract(validatorReward.reward, shareOfFee),
       }
     })
 
-      signAndBroadcast = props.stargateClient.signAndBroadcastWithoutBalanceCheck
+    signAndBroadcast = props.stargateClient.signAndBroadcastWithoutBalanceCheck
 
     if(!props.commission && adjustedValidatorRewards.some(validatorReward => validatorReward.reward <= 0)) {
       props.setLoading(false)
@@ -96,7 +93,7 @@ function ClaimRewards(props) {
           value: MsgDelegate.fromPartial({
             delegatorAddress: props.address,
             validatorAddress: validatorReward.validatorAddress,
-            amount: coin(parseInt(validatorReward.reward), props.network.denom)
+            amount: coin(validatorReward.reward, props.network.denom)
           })
         })
       }

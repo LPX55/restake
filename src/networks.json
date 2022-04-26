@@ -95,10 +95,6 @@
   },
   {
     "name": "lumnetwork",
-<<<<<<< HEAD
-    "autostake": {
-      "correctSlip44": false
-    },
     "restUrl": [
       "https://rest.cosmos.directory/lumnetwork",
       "https://node0.mainnet.lum.network/rest"
@@ -274,8 +270,6 @@
         "minimumReward": 1000
       }
     ],
-=======
->>>>>>> 0c8f187d590e061796faea6ab8f9be03987260a9
     "authzSupport": true
   },
   {
@@ -340,7 +334,6 @@
       "batchTxs": 100
     },
     "ownerAddress": "cerberusvaloper1tat2cy3f9djtq9z7ly262sqngcarvaktr0w78f",
-<<<<<<< HEAD
     "operators": [
       {
         "address": "cerberusvaloper1xjgspyv73d3k3ewygu0v2gcwwplwxkxg03reqy",
@@ -649,8 +642,6 @@
         "minimumReward": 10000000
       }
     ],
-=======
->>>>>>> 0c8f187d590e061796faea6ab8f9be03987260a9
     "authzSupport": true
   },
   {
